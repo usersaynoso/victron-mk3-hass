@@ -113,6 +113,15 @@ There are two ways to resolve this issue:
 So if the device is asleep and it is not responding to the MK3 interface, just plug it into
 the AC mains to wake it up. Try sending the command again and consider enabling standby mode.
 
+## Troubleshooting
+
+Here are some things to try if the MK3 interface appears to be having difficulties communicating with your inverter:
+
+- Unplug the MK3 from your computer's USB port and from the device's VE.Bus, plug it back in, and try again.
+- Check whether your device is remotely turned off and sleeping.  Consider enabling [standby](#standby) mode.
+- If there are additional peripherals plugged into your device's VE.Bus ports, try unplugging them to check for conflicts with the MK3 interface.
+- If you just operated your MK3 interface with a different program such as the Victron Connect app, the interface may have been left in a state that this library doesn't know how to handle.  Quit the other program, unplug the MK3 from VE.Bus to reset it, plug it back in, and try again.
+
 # Installation
 
 ## Manual
