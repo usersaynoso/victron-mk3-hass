@@ -47,6 +47,7 @@ def make_ac_phase_sensors(phase: int) -> tuple[VictronMK3SensorEntityDescription
             device_class=SensorDeviceClass.VOLTAGE,
             state_class=SensorStateClass.MEASUREMENT,
             native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+            suggested_display_precision=1,
             entity_registry_enabled_default=enable_default,
             value_fn=lambda data: None
             if data.ac[index] is None
@@ -58,6 +59,7 @@ def make_ac_phase_sensors(phase: int) -> tuple[VictronMK3SensorEntityDescription
             device_class=SensorDeviceClass.CURRENT,
             state_class=SensorStateClass.MEASUREMENT,
             native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+            suggested_display_precision=1,
             entity_registry_enabled_default=enable_default,
             value_fn=lambda data: None
             if data.ac[index] is None
@@ -69,6 +71,7 @@ def make_ac_phase_sensors(phase: int) -> tuple[VictronMK3SensorEntityDescription
             device_class=SensorDeviceClass.VOLTAGE,
             state_class=SensorStateClass.MEASUREMENT,
             native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+            suggested_display_precision=1,
             entity_registry_enabled_default=enable_default,
             value_fn=lambda data: None
             if data.ac[index] is None
@@ -80,6 +83,7 @@ def make_ac_phase_sensors(phase: int) -> tuple[VictronMK3SensorEntityDescription
             device_class=SensorDeviceClass.CURRENT,
             state_class=SensorStateClass.MEASUREMENT,
             native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+            suggested_display_precision=1,
             entity_registry_enabled_default=enable_default,
             value_fn=lambda data: None
             if data.ac[index] is None
@@ -95,6 +99,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=1,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: None
         if data.config is None
@@ -106,6 +111,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=1,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: None
         if data.config is None
@@ -117,6 +123,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=1,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: None
         if data.config is None
@@ -128,6 +135,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=1,
         value_fn=lambda data: None if data.power is None else data.power.ac_mains_power,
     ),
     VictronMK3SensorEntityDescription(
@@ -136,6 +144,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.FREQUENCY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfFrequency.HERTZ,
+        suggested_display_precision=1,
         value_fn=lambda data: None
         if data.ac[0] is None
         else data.ac[0].ac_mains_frequency,
@@ -146,6 +155,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=1,
         value_fn=lambda data: None
         if data.power is None
         else data.power.ac_inverter_power,
@@ -156,6 +166,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.FREQUENCY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfFrequency.HERTZ,
+        suggested_display_precision=1,
         value_fn=lambda data: None
         if data.dc is None
         else data.dc.ac_inverter_frequency,
@@ -166,6 +177,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        suggested_display_precision=2,
         value_fn=lambda data: None if data.dc is None else data.dc.dc_voltage,
     ),
     VictronMK3SensorEntityDescription(
@@ -174,6 +186,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=1,
         value_fn=lambda data: None if data.power is None else data.power.dc_power,
     ),
     VictronMK3SensorEntityDescription(
@@ -182,6 +195,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=1,
         value_fn=lambda data: None
         if data.dc is None
         else data.dc.dc_current_from_charger,
@@ -192,6 +206,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        suggested_display_precision=1,
         value_fn=lambda data: None
         if data.dc is None
         else data.dc.dc_current_to_inverter,
