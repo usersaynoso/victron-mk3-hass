@@ -11,13 +11,24 @@ This integration lets you build a remote control panel for your charger/inverter
 - The `Remote Panel Mode` entity sets the mode to on, off, charger_only, or inverter_only.
 - The `Remote Panel Current Limit` entity sets the AC input current limit.
 - The `Remote Panel Standby` entity sets whether the device will be prevented from
-  sleeping while it is turned off. Refer to the standby section for more details.
+  sleeping while it is turned off. Refer to the [standby mode](#standby-mode) section for more details.
 - The `victron_mk3.set_remote_panel_state` service action sets both the panel mode and the
   current limit simultaneously.
 
-Note that the remote panel mode and current limit persists even after the interface
-has been disconnected or the device is turned off. To restore the device to its default
-behavior, set the remote panel mode to `on` and set the current limit to its maximum.
+Here's what each remote panel switch state means:
+
+- `on`: Enable the charger and enable the inverter.
+- `charger_only`: Enable the charger and disable the inverter.
+- `inverter_only`: Enable the inverter and disable the charger.
+- `off`: Disable the charger and disable the inverter.
+
+The front panel switch and other inputs on the device may override the remote panel switch state.
+
+- When the device is turned off by the front panel switch or by the remote on/off connection, neither the charger nor the inverter will operate.
+- When the device is forced to charge only mode using the front panel switch, the inverter will not operate regardless of the remote panel switch state set by this interface.
+- Other conditions determined by the device may also apply such as constraints on the mains voltage and battery state of charge.
+
+The device retains the remote panel switch state and current limit set by the MK3 interface even after it has been disconnected from VE.Bus until the device goes to sleep (assuming it is not on standby). To restore the device to its default behavior, set the remote panel mode to `on` and set the current limit to its maximum.
 
 Refer to the [victron-mk3 library](https://github.com/j9brown/victron-mk3) for the list of supported devices.
 
@@ -94,33 +105,43 @@ data:
   current_limit: 12.5
 ```
 
-## Standby
+## Standby mode
 
-When the device is turned off, it may go to sleep and shut off its internal power supply
-to avoid draining the batteries. Because the MK3 interface is powered from device's VE.Bus
-port, it too will lose power and it will become unresponsive. Consequently, you will not
-be able to turn the device back on again using the interface.
+When the charger/inverter device is turned off and standby mode is not enabled, it may go to sleep and shut off its internal power supply to avoid draining the batteries. Because the MK3 interface is powered from the device's VE.Bus port, then the interface will lose power when the device is turned off and it will be unable to send a command to wake the device up again.
 
-Don't panic!
+The solution is to enable standby mode. When standby mode is enabled, the MK3 interface will prevent the device from going to sleep as long as it remains connected to the device's VE.Bus. Note that the device draws more energy from the batteries while in standby than it would while sleeping.
 
-There are two ways to resolve this issue:
-
-- When standby mode is enabled, the interface will prevent the device from going to sleep
-  as long as it remains connected to the device's VE.Bus. Note that the device draws more energy
-  from the batteries while in standby than it would while sleeping.
-- The device will automatically wake up from sleep whenever power is supplied to its AC input.
-
-So if the device is asleep and it is not responding to the MK3 interface, just plug it into
-the AC mains to wake it up. Try sending the command again and consider enabling standby mode.
+We recommend always enabling standby mode to maintain control of the device at all times.
 
 ## Troubleshooting
 
-Here are some things to try if the MK3 interface appears to be having difficulties communicating with your inverter:
+### What to do if your charger/inverter turned itself off and won't turn on anymore (and the front panel switch doesn't work)
 
-- Unplug the MK3 from your computer's USB port and from the device's VE.Bus, plug it back in, and try again.
-- Check whether your device is remotely turned off and sleeping.  Consider enabling [standby](#standby) mode.
-- If there are additional peripherals plugged into your device's VE.Bus ports, try unplugging them to check for conflicts with the MK3 interface.
-- If you just operated your MK3 interface with a different program such as the Victron Connect app, the interface may have been left in a state that this library doesn't know how to handle.  Quit the other program, unplug the MK3 from VE.Bus to reset it, plug it back in, and try again.
+Don't panic!
+
+Your device probably thinks it's supposed to be sleeping and it needs little nudge to wake up or forget that it's supposed to be sleeping. The device firmware determines the operating mode based on several factors, including the state of the front panel switch, remote panel state (set via the MK3 interface), and remote on/off connection. You might feel concerned that toggling the front panel switch doesn't fix the problem right away and it's probably going to be fine.
+
+Here are some possible recovery methods:
+
+- Check the front panel status indicators on the device. If some of indicators are lit, they may tell you what the problem is.
+- If you have connected a switch to the remote on/off switch input of your device, make sure it's in the ON position and that the wires are intact.
+- Plug the device into AC mains. The device should wake up within a few seconds and begin responding to the MK3 interface again. Use the MK3 interface to set the remote panel mode to ON.
+- Unplug the MK3 interface from the VE.Bus port or disconnect the ethernet jack from the interface. Toggle the front panel switch to OFF. Wait at least 30 seconds for the device to fully go to sleep. Toggle the front panel switch to ON and wait a few seconds for the device to turn on. If that didn't work, try toggling the front panel switch to CHARGE ONLY then OFF, wait at least 30 seconds again, then ON again. Plug the MK3 interface back in as before.
+- Ensure the device is connected to the batteries and receiving power.
+
+Once you have resolved the issue, consider enabling [standby mode](#standby-mode) to prevent the device from falling asleep unintentionally.
+
+### What to do if the MK3 interface has difficulties communicating with your charger/inverter device
+
+Here are some things to try if the MK3 interface appears to be having difficulties communicating with your charger/inverter device or is outputting incomplete data:
+
+- Check the logs for relevant messages.
+- Ensure that the MK3 interface is plugged into USB and the path of the serial port is correct.
+- The MK3 interface receives power from VE.Bus and will not operate if the device is asleep. Ensure it is plugged into VE.Bus and awake as explained in [this topic](#what-to-do-if-your-chargerinverter-turned-itself-off-and-wont-turn-on-anymore-and-the-front-panel-switch-doesnt-work).
+- Unplug the MK3 interface from your computer's USB port, unplug the MK3 interface from the device's VE.Bus (or disconnect the ethernet jack from the interface), plug the MK3 back in as before, and try again.
+- If you have connected additional peripherals to your device's VE.Bus ports, try unplugging them to rule out possible conflicts with the MK3 interface.
+- If you just operated your MK3 interface using a different program such as the Victron Connect app, the interface may have been left in a state that this library doesn't know how to handle. Quit the other program, unplug the MK3 from VE.Bus to reset it, plug it back in, and try again.
+- Try using the MK3 interface with Victron Connect, just to make sure it works, and to apply firmware updates to the device.
 
 # Installation
 
