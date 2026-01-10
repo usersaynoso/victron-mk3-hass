@@ -10,9 +10,9 @@
   "issue_tracker": "https://github.com/j9brown/victron-mk3-hass/issues",
   "loggers": ["victron_mk3"],
   "requirements": [
-    "git+https://github.com/j9brown/victron-mk3.git@main#victron_mk3==0.5.0",
+    "git+https://github.com/j9brown/victron-mk3.git@main#victron_mk3==0.6.0",
     "pyserial",
-    "pyserial-asyncio"
+    "pyserial-asyncio-fast"
   ],
   "usb": [
     {
@@ -22,5 +22,5 @@
       "description": "*mk3*"
     }
   ],
-  "version": "0.5.0"
+  "version": "0.6.0"
 }
