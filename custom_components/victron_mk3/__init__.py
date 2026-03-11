@@ -43,6 +43,16 @@ from victron_mk3 import (
 import voluptuous as vol
 
 from .battery_monitor import read_battery_soc, register_battery_soc_variable
+from .battery_monitor_settings import (
+    BATTERY_CAPACITY_SETTING_ID,
+    BATTERY_MONITOR_SETTING_IDS,
+    SettingInfo,
+    SettingValue,
+    battery_monitor_enabled_from_capacity,
+    read_setting,
+    read_setting_info,
+    write_setting,
+)
 from .const import (
     AC_PHASES_POLLED,
     CONF_CURRENT_LIMIT,
@@ -96,11 +106,14 @@ SERVICE_SCHEMA = vol.Schema(
 class Data:
     def __init__(self) -> None:
         self.ac: List[ACResponse | None] = [None] * AC_PHASES_POLLED
+        self.battery_monitor_enabled: bool | None = None
         self.battery_soc: float | None = None
         self.config: ConfigResponse | None = None
         self.dc: DCResponse | None = None
         self.led: LEDResponse | None = None
         self.power: PowerResponse | None = None
+        self.setting_info: dict[int, SettingInfo] = {}
+        self.setting_values: dict[int, SettingValue] = {}
         self.version: VersionResponse | None = None
 
     def front_panel_mode(self) -> Mode | None:
@@ -149,6 +162,8 @@ class Controller(Handler):
         self._mk3 = VictronMK3(port)
         self._fault: Fault | None = None
         self._idle = False
+        self._battery_monitor_info: dict[int, SettingInfo] = {}
+        self._last_battery_capacity: float | None = None
         self._version: VersionResponse | None = None
         self.standby: bool | None = None
         self.ac_entities = [[] for _ in range(0, AC_PHASES_POLLED)]
@@ -207,8 +222,10 @@ class Controller(Handler):
                 else None
             )
         data.power = await self._mk3.send_power_request()
+        await self._update_battery_monitor_settings(data)
         try:
-            data.battery_soc = await read_battery_soc(self._mk3)
+            if data.battery_monitor_enabled:
+                data.battery_soc = await read_battery_soc(self._mk3)
         except Exception:
             logger.debug("Failed to read battery state of charge", exc_info=True)
         data.config = await self._mk3.send_config_request()
@@ -218,6 +235,69 @@ class Controller(Handler):
         self, mode: Mode, current_limit: float | None
     ) -> None:
         await self._mk3.send_state_request(MODE_TO_SWITCH_STATE[mode], current_limit)
+
+    async def set_battery_monitor_enabled(self, enabled: bool) -> None:
+        target_capacity = 0 if not enabled else self._last_battery_capacity
+        if enabled and (target_capacity is None or target_capacity <= 0):
+            raise HomeAssistantError(
+                "Set Battery Capacity to a value greater than 0 before enabling Battery Monitor"
+            )
+
+        await self.set_battery_monitor_setting(
+            BATTERY_CAPACITY_SETTING_ID,
+            float(target_capacity),
+        )
+
+    async def set_battery_monitor_setting(self, setting_id: int, value: float) -> None:
+        info = self._battery_monitor_info.get(setting_id)
+        result = await write_setting(self._mk3, setting_id, value, info)
+        if result is None or not result.supported:
+            raise HomeAssistantError(f"Setting {setting_id} is not available")
+
+        if (
+            setting_id == BATTERY_CAPACITY_SETTING_ID
+            and result.value is not None
+            and result.value > 0
+        ):
+            self._last_battery_capacity = result.value
+
+    async def _update_battery_monitor_settings(self, data: Data) -> None:
+        for setting_id in BATTERY_MONITOR_SETTING_IDS:
+            try:
+                info = self._battery_monitor_info.get(setting_id)
+                if info is None:
+                    info = await read_setting_info(self._mk3, setting_id)
+                    if info is not None:
+                        self._battery_monitor_info[setting_id] = info
+                if info is None:
+                    continue
+                data.setting_info[setting_id] = info
+
+                value = await read_setting(self._mk3, setting_id, info)
+                if value is None:
+                    continue
+                data.setting_values[setting_id] = value
+
+                if (
+                    setting_id == BATTERY_CAPACITY_SETTING_ID
+                    and value.supported
+                    and value.value is not None
+                    and value.value > 0
+                ):
+                    self._last_battery_capacity = value.value
+            except Exception:
+                logger.debug(
+                    "Failed to read battery monitor setting %s",
+                    setting_id,
+                    exc_info=True,
+                )
+
+        capacity = data.setting_values.get(BATTERY_CAPACITY_SETTING_ID)
+        data.battery_monitor_enabled = (
+            None
+            if capacity is None or not capacity.supported
+            else battery_monitor_enabled_from_capacity(capacity.value)
+        )
 
 
 class Context:

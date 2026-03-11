@@ -57,14 +57,25 @@ you need (such as AC Input Voltage L2) because they are disabled by default.
 - Battery Power
 
 Battery State of Charge is only available when the VE.Bus Battery Monitor is enabled in
-VEConfigure or VictronConnect and the connected device reports RAM variable 13 over
-the MK3 interface.
+Home Assistant, VEConfigure, or VictronConnect and the connected device reports RAM
+variable 13 over the MK3 interface.
 
 ### Configuration entities
 
+- Battery Monitor: off, on
+- Battery Capacity
+- State of Charge When Bulk Finished
+- Charge Efficiency
 - Remote Panel Mode: off, on, charging_only, inverter_only
 - Remote Panel Current Limit
 - Remote Panel Standby: off, on
+
+The VE.Bus Battery Monitor can be enabled from Home Assistant by setting Battery Capacity
+to a value greater than 0. On devices like the one this integration was tested against,
+disabling Battery Monitor sets Battery Capacity to 0.
+
+If your device reports Charge Efficiency as a fractional value, the Home Assistant number
+entity uses that same representation. For example, `0.95` means `95%`.
 
 ### Diagnostic entities
 

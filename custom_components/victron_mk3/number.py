@@ -8,7 +8,7 @@ from homeassistant.components.number import (
     NumberMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfElectricCurrent
+from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfElectricCurrent
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -16,6 +16,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from typing import Awaitable, Callable
 
 from . import Context, Data
+from .battery_monitor_settings import (
+    BATTERY_CAPACITY_SETTING_ID,
+    BATTERY_CHARGE_EFFICIENCY_SETTING_ID,
+    BATTERY_SOC_WHEN_BULK_FINISHED_SETTING_ID,
+)
 from .const import (
     DOMAIN,
     KEY_CONTEXT,
@@ -29,6 +34,13 @@ async def set_remote_panel_current_limit(context: Context, value: float) -> None
 
     mode = data.remote_panel_mode()
     await context.controller.set_remote_panel_state(mode, value)
+    await context.coordinator.async_request_refresh()
+
+
+async def set_battery_monitor_setting(
+    context: Context, setting_id: int, value: float
+) -> None:
+    await context.controller.set_battery_monitor_setting(setting_id, value)
     await context.coordinator.async_request_refresh()
 
 
@@ -56,7 +68,70 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3NumberEntityDescription, ...] = (
         ),
         set_fn=set_remote_panel_current_limit,
     ),
+    VictronMK3NumberEntityDescription(
+        key="battery_capacity",
+        name="Battery Capacity",
+        native_unit_of_measurement="Ah",
+        entity_category=EntityCategory.CONFIG,
+        mode=NumberMode.BOX,
+        range_fn=lambda data: battery_monitor_setting_range(
+            data, BATTERY_CAPACITY_SETTING_ID
+        ),
+        set_fn=lambda context, value: set_battery_monitor_setting(
+            context, BATTERY_CAPACITY_SETTING_ID, value
+        ),
+    ),
+    VictronMK3NumberEntityDescription(
+        key="battery_soc_when_bulk_finished",
+        name="State of Charge When Bulk Finished",
+        native_unit_of_measurement=PERCENTAGE,
+        entity_category=EntityCategory.CONFIG,
+        mode=NumberMode.BOX,
+        range_fn=lambda data: battery_monitor_setting_range(
+            data, BATTERY_SOC_WHEN_BULK_FINISHED_SETTING_ID
+        ),
+        set_fn=lambda context, value: set_battery_monitor_setting(
+            context, BATTERY_SOC_WHEN_BULK_FINISHED_SETTING_ID, value
+        ),
+    ),
+    VictronMK3NumberEntityDescription(
+        key="battery_charge_efficiency",
+        name="Charge Efficiency",
+        entity_category=EntityCategory.CONFIG,
+        mode=NumberMode.BOX,
+        range_fn=lambda data: battery_monitor_setting_range(
+            data, BATTERY_CHARGE_EFFICIENCY_SETTING_ID
+        ),
+        set_fn=lambda context, value: set_battery_monitor_setting(
+            context, BATTERY_CHARGE_EFFICIENCY_SETTING_ID, value
+        ),
+    ),
 )
+
+
+def battery_monitor_setting_range(
+    data: Data, setting_id: int
+) -> tuple[float, float, float, float] | None:
+    info = data.setting_info.get(setting_id)
+    value = data.setting_values.get(setting_id)
+    if (
+        info is None
+        or not info.supported
+        or info.minimum is None
+        or info.maximum is None
+        or info.scale is None
+        or value is None
+        or not value.supported
+        or value.value is None
+    ):
+        return None
+
+    return (
+        info.minimum,
+        info.maximum,
+        abs(info.scale),
+        value.value,
+    )
 
 
 class VictronMK3NumberEntity(CoordinatorEntity, NumberEntity):
