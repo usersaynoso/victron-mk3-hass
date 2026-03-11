@@ -42,6 +42,7 @@ from victron_mk3 import (
 )
 import voluptuous as vol
 
+from .battery_monitor import read_battery_soc, register_battery_soc_variable
 from .const import (
     AC_PHASES_POLLED,
     CONF_CURRENT_LIMIT,
@@ -95,6 +96,7 @@ SERVICE_SCHEMA = vol.Schema(
 class Data:
     def __init__(self) -> None:
         self.ac: List[ACResponse | None] = [None] * AC_PHASES_POLLED
+        self.battery_soc: float | None = None
         self.config: ConfigResponse | None = None
         self.dc: DCResponse | None = None
         self.led: LEDResponse | None = None
@@ -153,6 +155,7 @@ class Controller(Handler):
 
     async def start(self) -> None:
         await self._mk3.start(self)
+        register_battery_soc_variable(self._mk3)
 
     async def stop(self) -> None:
         await self._mk3.stop()
@@ -181,6 +184,8 @@ class Controller(Handler):
         if self._idle:
             raise UpdateFailed("Device is asleep")
 
+        register_battery_soc_variable(self._mk3)
+
         if self.standby is not None:
             flags = InterfaceFlags.PANEL_DETECT
             if self.standby:
@@ -202,6 +207,10 @@ class Controller(Handler):
                 else None
             )
         data.power = await self._mk3.send_power_request()
+        try:
+            data.battery_soc = await read_battery_soc(self._mk3)
+        except Exception:
+            logger.debug("Failed to read battery state of charge", exc_info=True)
         data.config = await self._mk3.send_config_request()
         return data
 

@@ -50,10 +50,15 @@ you need (such as AC Input Voltage L2) because they are disabled by default.
 
 ### Battery sensors
 
+- Battery State of Charge
 - Battery Voltage
 - Battery Input Current
 - Battery Output Current
 - Battery Power
+
+Battery State of Charge is only available when the VE.Bus Battery Monitor is enabled in
+VEConfigure or VictronConnect and the connected device reports RAM variable 13 over
+the MK3 interface.
 
 ### Configuration entities
 
