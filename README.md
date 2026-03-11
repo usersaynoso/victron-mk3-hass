@@ -56,9 +56,10 @@ you need (such as AC Input Voltage L2) because they are disabled by default.
 - Battery Output Current
 - Battery Power
 
-Battery State of Charge is only available when the VE.Bus Battery Monitor is enabled in
-Home Assistant, VEConfigure, or VictronConnect and the connected device reports RAM
-variable 13 over the MK3 interface.
+Battery State of Charge is only available when the VE.Bus Battery Monitor is enabled
+and the connected device reports RAM variable 13 over the MK3 interface. You can
+enable Battery Monitor directly from Home Assistant by setting Battery Capacity to a
+value greater than 0, or by enabling it in VEConfigure or VictronConnect.
 
 ### Configuration entities
 
