@@ -12,18 +12,22 @@ from homeassistant.const import (
     EntityCategory,
     PERCENTAGE,
     UnitOfElectricCurrent,
+    UnitOfEnergy,
     UnitOfFrequency,
     UnitOfElectricPotential,
     UnitOfPower,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.typing import StateType
+from homeassistant.util import dt as dt_util
 from typing import Callable
 from victron_mk3 import DeviceState
 
-from . import Context, Data, Mode, enum_options, enum_value
+from . import Context, Data, Mode, UPDATE_INTERVAL, enum_options, enum_value
+from .battery_energy import BatteryEnergyAccumulator, BatteryEnergyDirection
 from .const import (
     AC_PHASES_POLLED,
     DOMAIN,
@@ -34,6 +38,11 @@ from .const import (
 @dataclass(kw_only=True)
 class VictronMK3SensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[Data], StateType]
+
+
+@dataclass(kw_only=True)
+class VictronMK3BatteryEnergySensorEntityDescription(SensorEntityDescription):
+    direction: BatteryEnergyDirection
 
 
 def make_ac_phase_sensors(phase: int) -> tuple[VictronMK3SensorEntityDescription, ...]:
@@ -271,6 +280,30 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
 )
 
 
+BATTERY_ENERGY_ENTITY_DESCRIPTIONS: tuple[
+    VictronMK3BatteryEnergySensorEntityDescription, ...
+] = (
+    VictronMK3BatteryEnergySensorEntityDescription(
+        key="battery_energy_into",
+        name="Battery Energy Into",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=3,
+        direction=BatteryEnergyDirection.INTO_BATTERY,
+    ),
+    VictronMK3BatteryEnergySensorEntityDescription(
+        key="battery_energy_out_of",
+        name="Battery Energy Out Of",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=3,
+        direction=BatteryEnergyDirection.OUT_OF_BATTERY,
+    ),
+)
+
+
 class VictronMK3SensorEntity(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
 
@@ -296,6 +329,60 @@ class VictronMK3SensorEntity(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
 
+class VictronMK3BatteryEnergySensorEntity(RestoreEntity, CoordinatorEntity, SensorEntity):
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        context: Context,
+        entity_description: VictronMK3BatteryEnergySensorEntityDescription,
+    ):
+        CoordinatorEntity.__init__(self, context.coordinator, entity_description.key)
+        self.entity_description = entity_description
+        self._attr_device_info = context.device_info
+        self._attr_unique_id = f"{context.device_id}-{entity_description.key}"
+        self._attr_available = False
+        self._attr_native_value = None
+        self._accumulator = BatteryEnergyAccumulator(
+            direction=entity_description.direction,
+            max_interval_seconds=UPDATE_INTERVAL.total_seconds() * 3,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            restored_value = _parse_float(last_state.state)
+            if restored_value is not None:
+                self._accumulator.restore(restored_value)
+                self._attr_native_value = round(self._accumulator.total_kwh, 6)
+                self._attr_available = True
+
+        if self.coordinator.data is not None:
+            self._handle_coordinator_update()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        data = self.coordinator.data
+        power_watts = None if data is None or data.power is None else data.power.dc_power
+
+        total_kwh = self._accumulator.advance(dt_util.utcnow(), power_watts)
+        if power_watts is None:
+            self._attr_available = False
+        else:
+            self._attr_available = True
+            self._attr_native_value = round(total_kwh, 6)
+        self.async_write_ha_state()
+
+
+def _parse_float(value: str) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -305,6 +392,10 @@ async def async_setup_entry(
     entities = [
         VictronMK3SensorEntity(context, description)
         for description in ENTITY_DESCRIPTIONS
+    ]
+    entities += [
+        VictronMK3BatteryEnergySensorEntity(context, description)
+        for description in BATTERY_ENERGY_ENTITY_DESCRIPTIONS
     ]
     for phase in range(1, AC_PHASES_POLLED + 1):
         ac_sensors = [
