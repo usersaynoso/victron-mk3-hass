@@ -17,6 +17,7 @@ set_remote_panel_state:
           options:
             - "off"
             - "on"
+            - pass_through
             - charger_only
             - inverter_only
     current_limit:

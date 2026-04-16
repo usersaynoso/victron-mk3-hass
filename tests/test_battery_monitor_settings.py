@@ -155,6 +155,95 @@ def test_write_setting_sends_write_setting_then_write_data() -> None:
     assert value.value == 90
 
 
+def test_write_setting_raw_sends_raw_setting_value() -> None:
+    driver = FakeDriver([bytes.fromhex("ff59880000")])
+    info = battery_monitor_settings.SettingInfo(
+        setting_id=0,
+        supported=True,
+        scale=1,
+        offset=0,
+        default_raw=0,
+        minimum_raw=0,
+        maximum_raw=0xFFFF,
+    )
+
+    value = asyncio.run(
+        battery_monitor_settings.write_setting_raw(FakeMK3(driver), 0, 0x24, info)
+    )
+
+    assert driver.frames == [("X", [0x33, 0, 0])]
+    assert driver.requests == [[0x34, 0x24, 0]]
+    assert value is not None
+    assert value.supported
+    assert value.raw_value == 0x24
+    assert value.value == 0x24
+
+
+def test_setting_flag_helpers_use_raw_bit_masks() -> None:
+    info = battery_monitor_settings.SettingInfo(
+        setting_id=0,
+        supported=True,
+        scale=1,
+        offset=0,
+        maximum_raw=(
+            (1 << battery_monitor_settings.POWER_ASSIST_ENABLED_FLAG_BIT)
+            | (1 << battery_monitor_settings.DISABLE_WAVE_CHECK_FLAG_BIT)
+            | (1 << battery_monitor_settings.DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT)
+        ),
+    )
+    value = battery_monitor_settings.SettingValue(
+        setting_id=0,
+        supported=True,
+        raw_value=(
+            (1 << battery_monitor_settings.POWER_ASSIST_ENABLED_FLAG_BIT)
+            | (1 << battery_monitor_settings.DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT)
+        ),
+    )
+
+    assert battery_monitor_settings.setting_flag_supported(
+        info,
+        battery_monitor_settings.POWER_ASSIST_ENABLED_FLAG_BIT,
+    )
+    assert not battery_monitor_settings.setting_flag_supported(info, 4)
+    assert battery_monitor_settings.setting_flag_enabled(
+        value,
+        battery_monitor_settings.POWER_ASSIST_ENABLED_FLAG_BIT,
+    )
+    assert (
+        battery_monitor_settings.setting_raw_with_flag(
+            0,
+            battery_monitor_settings.POWER_ASSIST_ENABLED_FLAG_BIT,
+            True,
+        )
+        == 1 << battery_monitor_settings.POWER_ASSIST_ENABLED_FLAG_BIT
+    )
+    assert (
+        battery_monitor_settings.setting_raw_with_flag(
+            0xFFFF,
+            battery_monitor_settings.POWER_ASSIST_ENABLED_FLAG_BIT,
+            False,
+        )
+        == 0xFFFF & ~(1 << battery_monitor_settings.POWER_ASSIST_ENABLED_FLAG_BIT)
+    )
+    assert battery_monitor_settings.ups_function_supported(info)
+    assert battery_monitor_settings.ups_function_enabled(value)
+    assert (
+        battery_monitor_settings.setting_raw_with_ups_function(0, True)
+        == 1 << battery_monitor_settings.DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT
+    )
+    assert (
+        battery_monitor_settings.setting_raw_with_ups_function(0xFFFF, False)
+        == 0xFFFF
+        & ~(1 << battery_monitor_settings.DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT)
+    )
+    assert battery_monitor_settings.DISABLE_WAVE_CHECK_FLAG_BIT == 3
+    assert battery_monitor_settings.DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT == 7
+    assert battery_monitor_settings.FLAGS1_SETTING_ID == 1
+    assert battery_monitor_settings.DISABLE_CHARGE_FLAG_BIT == 6
+    assert battery_monitor_settings.WEAK_AC_INPUT_ENABLED_FLAG_BIT == 14
+    assert battery_monitor_settings.DYNAMIC_CURRENT_LIMITER_ENABLED_FLAG_BIT == 12
+
+
 def test_public_setting_api_is_coerced() -> None:
     info = asyncio.run(battery_monitor_settings.read_setting_info(PublicMK3(), 64))
     value = asyncio.run(battery_monitor_settings.read_setting(PublicMK3(), 72))

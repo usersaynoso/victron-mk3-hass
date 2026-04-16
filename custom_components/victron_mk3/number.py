@@ -33,6 +33,8 @@ async def set_remote_panel_current_limit(context: Context, value: float) -> None
         raise HomeAssistantError("Device is not available")
 
     mode = data.remote_panel_mode()
+    if mode is None:
+        raise HomeAssistantError("Device is not available")
     await context.controller.set_remote_panel_state(mode, value)
     await context.coordinator.async_request_refresh()
 

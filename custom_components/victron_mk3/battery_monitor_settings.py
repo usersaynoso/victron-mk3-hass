@@ -5,6 +5,16 @@ from dataclasses import dataclass
 from typing import Any
 
 
+FLAGS0_SETTING_ID = 0
+FLAGS1_SETTING_ID = 1
+DISABLE_WAVE_CHECK_FLAG_BIT = 3
+DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT = 7
+DISABLE_CHARGE_FLAG_BIT = 6
+POWER_ASSIST_ENABLED_FLAG_BIT = 5
+WEAK_AC_INPUT_ENABLED_FLAG_BIT = 14
+# Dynamic current limiter is Flags[28], which maps to bit 12 in Flags1.
+DYNAMIC_CURRENT_LIMITER_ENABLED_FLAG_BIT = 12
+
 BATTERY_CAPACITY_SETTING_ID = 64
 BATTERY_SOC_WHEN_BULK_FINISHED_SETTING_ID = 65
 BATTERY_CHARGE_EFFICIENCY_SETTING_ID = 72
@@ -13,6 +23,10 @@ BATTERY_MONITOR_SETTING_IDS = (
     BATTERY_CAPACITY_SETTING_ID,
     BATTERY_SOC_WHEN_BULK_FINISHED_SETTING_ID,
     BATTERY_CHARGE_EFFICIENCY_SETTING_ID,
+)
+MONITORED_SETTING_IDS = BATTERY_MONITOR_SETTING_IDS + (
+    FLAGS0_SETTING_ID,
+    FLAGS1_SETTING_ID,
 )
 
 
@@ -96,6 +110,64 @@ def battery_monitor_enabled_from_capacity(capacity: float | None) -> bool | None
     if capacity is None:
         return None
     return capacity > 0
+
+
+def setting_flag_supported(info: SettingInfo | None, flag_bit: int) -> bool:
+    return (
+        info is not None
+        and info.supported
+        and info.maximum_raw is not None
+        and 0 <= flag_bit < 16
+        and info.maximum_raw & (1 << flag_bit) != 0
+    )
+
+
+def setting_flag_enabled(value: SettingValue | None, flag_bit: int) -> bool | None:
+    if (
+        value is None
+        or not value.supported
+        or value.raw_value is None
+        or flag_bit < 0
+        or flag_bit >= 16
+    ):
+        return None
+
+    return value.raw_value & (1 << flag_bit) != 0
+
+
+def setting_raw_with_flag(raw_value: int, flag_bit: int, enabled: bool) -> int:
+    if raw_value < 0 or raw_value > 0xFFFF:
+        raise ValueError(f"Setting raw value {raw_value} is out of range")
+    if flag_bit < 0 or flag_bit >= 16:
+        raise ValueError(f"Flag bit {flag_bit} is out of range")
+
+    mask = 1 << flag_bit
+    if enabled:
+        return raw_value | mask
+    return raw_value & ~mask
+
+
+def ups_function_supported(info: SettingInfo | None) -> bool:
+    return setting_flag_supported(
+        info, DISABLE_WAVE_CHECK_FLAG_BIT
+    ) and setting_flag_supported(info, DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT)
+
+
+def ups_function_enabled(value: SettingValue | None) -> bool | None:
+    disable_wave_check = setting_flag_enabled(value, DISABLE_WAVE_CHECK_FLAG_BIT)
+    inverse_disable_wave_check = setting_flag_enabled(
+        value, DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT
+    )
+    if disable_wave_check is None or inverse_disable_wave_check is None:
+        return None
+    return not disable_wave_check
+
+
+def setting_raw_with_ups_function(raw_value: int, enabled: bool) -> int:
+    value = setting_raw_with_flag(raw_value, DISABLE_WAVE_CHECK_FLAG_BIT, not enabled)
+    return setting_raw_with_flag(
+        value, DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT, enabled
+    )
 
 
 async def read_setting_info(mk3: Any, setting_id: int) -> SettingInfo | None:
@@ -192,6 +264,44 @@ async def write_setting(
         return SettingValue(setting_id=setting_id, supported=False)
 
     raw_value = info.raw_from_value(value)
+    completed = asyncio.Event()
+    result: dict[str, SettingValue | Exception | None] = {"value": None, "error": None}
+
+    def completion(_handler: Any, msg: bytes) -> None:
+        try:
+            result["value"] = _parse_setting_write_frame(setting_id, msg, info, raw_value)
+        except Exception as err:
+            result["error"] = err
+        finally:
+            completed.set()
+
+    driver._send_frame("X", [0x33, setting_id & 0xFF, setting_id >> 8])
+    driver._send_w_request([0x34, raw_value & 0xFF, raw_value >> 8], completion)
+    await asyncio.wait_for(completed.wait(), _request_timeout(driver))
+
+    error = result["error"]
+    if error is not None:
+        raise error
+    return result["value"]
+
+
+async def write_setting_raw(
+    mk3: Any, setting_id: int, raw_value: int, info: SettingInfo | None = None
+) -> SettingValue | None:
+    if raw_value < 0 or raw_value > 0xFFFF:
+        raise ValueError(f"Setting raw value {raw_value} is out of range")
+
+    driver = getattr(mk3, "_driver", None)
+    if driver is None:
+        return None
+
+    if info is None:
+        info = await read_setting_info(mk3, setting_id)
+    if info is None:
+        return None
+    if not info.supported:
+        return SettingValue(setting_id=setting_id, supported=False)
+
     completed = asyncio.Event()
     result: dict[str, SettingValue | Exception | None] = {"value": None, "error": None}
 

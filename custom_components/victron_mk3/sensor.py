@@ -26,12 +26,18 @@ from homeassistant.util import dt as dt_util
 from typing import Callable
 from victron_mk3 import DeviceState
 
-from . import Context, Data, Mode, UPDATE_INTERVAL, enum_options, enum_value
+from . import Context, Data, UPDATE_INTERVAL
 from .battery_energy import BatteryEnergyAccumulator, BatteryEnergyDirection
 from .const import (
     AC_PHASES_POLLED,
     DOMAIN,
     KEY_CONTEXT,
+)
+from .remote_panel import Mode, enum_options, enum_value
+from .ram_variables import (
+    IGNORE_AC_INPUT_VARIABLE_ID,
+    ram_variable_bool_enabled,
+    ram_variable_bool_supported,
 )
 
 
@@ -265,9 +271,17 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3SensorEntityDescription, ...] = (
         key="front_panel_mode",
         name="Front Panel Mode",
         device_class=SensorDeviceClass.ENUM,
-        options=enum_options(Mode),
+        options=("off", "on", "charger_only"),
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: enum_value(data.front_panel_mode()),
+    ),
+    VictronMK3SensorEntityDescription(
+        key="ignore_ac_input_state",
+        name="Ignore AC Input State",
+        device_class=SensorDeviceClass.ENUM,
+        options=("off", "on"),
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _ignore_ac_input_state(data),
     ),
     VictronMK3SensorEntityDescription(
         key="actual_mode",
@@ -381,6 +395,18 @@ def _parse_float(value: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _ignore_ac_input_state(data: Data) -> str | None:
+    info = data.ram_variable_info.get(IGNORE_AC_INPUT_VARIABLE_ID)
+    value = data.ram_variable_values.get(IGNORE_AC_INPUT_VARIABLE_ID)
+    if not ram_variable_bool_supported(info):
+        return None
+
+    enabled = ram_variable_bool_enabled(value, info)
+    if enabled is None:
+        return None
+    return "on" if enabled else "off"
 
 
 async def async_setup_entry(

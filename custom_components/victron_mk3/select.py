@@ -13,11 +13,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from typing import Awaitable, Callable
 
-from . import Context, Data, Mode, enum_options, enum_value, mode_from_value
+from . import Context, Data
 from .const import (
     DOMAIN,
     KEY_CONTEXT,
 )
+from .remote_panel import Mode, enum_options, enum_value, mode_from_value
 
 
 async def select_remote_panel_mode(context: Context, option: str) -> None:

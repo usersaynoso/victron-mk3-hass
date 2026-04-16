@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from enum import Enum
 from homeassistant.components.device_automation.exceptions import DeviceNotFound
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -44,14 +43,28 @@ import voluptuous as vol
 
 from .battery_monitor import read_battery_soc, register_battery_soc_variable
 from .battery_monitor_settings import (
+    DISABLE_CHARGE_FLAG_BIT,
+    DISABLE_WAVE_CHECK_FLAG_BIT,
+    DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT,
+    FLAGS0_SETTING_ID,
+    FLAGS1_SETTING_ID,
+    MONITORED_SETTING_IDS,
+    DYNAMIC_CURRENT_LIMITER_ENABLED_FLAG_BIT,
+    POWER_ASSIST_ENABLED_FLAG_BIT,
     BATTERY_CAPACITY_SETTING_ID,
-    BATTERY_MONITOR_SETTING_IDS,
     SettingInfo,
     SettingValue,
     battery_monitor_enabled_from_capacity,
     read_setting,
     read_setting_info,
+    setting_flag_enabled,
+    setting_flag_supported,
+    setting_raw_with_flag,
+    setting_raw_with_ups_function,
+    ups_function_supported,
+    WEAK_AC_INPUT_ENABLED_FLAG_BIT,
     write_setting,
+    write_setting_raw,
 )
 from .const import (
     AC_PHASES_POLLED,
@@ -60,16 +73,26 @@ from .const import (
     DOMAIN,
     KEY_CONTEXT,
 )
+from .remote_panel import (
+    Mode,
+    base_mode_for_remote_panel,
+    disable_charge_for_remote_panel,
+    enum_options,
+    mode_from_value,
+    mode_with_disable_charge,
+)
+from .ram_variables import (
+    IGNORE_AC_INPUT_VARIABLE_ID,
+    MONITORED_RAM_VARIABLE_IDS,
+    RamVariableInfo,
+    RamVariableValue,
+    ram_variable_bool_supported,
+    read_ram_variable,
+    read_ram_variable_info,
+)
 
 PLATFORMS: list[Platform] = ["number", "select", "sensor", "switch"]
 UPDATE_INTERVAL = timedelta(seconds=2)
-
-
-class Mode(Enum):
-    OFF = 0
-    ON = 1
-    CHARGER_ONLY = 2
-    INVERTER_ONLY = 3
 
 
 MODE_TO_SWITCH_STATE = {
@@ -78,18 +101,6 @@ MODE_TO_SWITCH_STATE = {
     Mode.CHARGER_ONLY: SwitchState.CHARGER_ONLY,
     Mode.INVERTER_ONLY: SwitchState.INVERTER_ONLY,
 }
-
-
-def enum_options(enum_class) -> List[str]:
-    return [x.lower() for x in enum_class._member_names_]
-
-
-def enum_value(e: Enum | None) -> str | None:
-    return None if e is None else str(e) if e.name is None else e.name.lower()
-
-
-def mode_from_value(value: str) -> Mode:
-    return Mode[value.upper()]
 
 
 SERVICE_NAME = "set_remote_panel_state"
@@ -112,6 +123,8 @@ class Data:
         self.dc: DCResponse | None = None
         self.led: LEDResponse | None = None
         self.power: PowerResponse | None = None
+        self.ram_variable_info: dict[int, RamVariableInfo] = {}
+        self.ram_variable_values: dict[int, RamVariableValue] = {}
         self.setting_info: dict[int, SettingInfo] = {}
         self.setting_values: dict[int, SettingValue] = {}
         self.version: VersionResponse | None = None
@@ -130,9 +143,13 @@ class Data:
         if self.config is None:
             return None
         reg = self.config.switch_register
+        charge_disabled = setting_flag_enabled(
+            self.setting_values.get(FLAGS0_SETTING_ID),
+            DISABLE_CHARGE_FLAG_BIT,
+        )
         if reg & SwitchRegister.DIRECT_REMOTE_SWITCH_CHARGE != 0:
             if reg & SwitchRegister.DIRECT_REMOTE_SWITCH_INVERT != 0:
-                return Mode.ON
+                return mode_with_disable_charge(Mode.ON, charge_disabled is True)
             else:
                 return Mode.CHARGER_ONLY
         else:
@@ -145,9 +162,13 @@ class Data:
         if self.config is None:
             return None
         reg = self.config.switch_register
+        charge_disabled = setting_flag_enabled(
+            self.setting_values.get(FLAGS0_SETTING_ID),
+            DISABLE_CHARGE_FLAG_BIT,
+        )
         if reg & SwitchRegister.SWITCH_CHARGE != 0:
             if reg & SwitchRegister.SWITCH_INVERT != 0:
-                return Mode.ON
+                return mode_with_disable_charge(Mode.ON, charge_disabled is True)
             else:
                 return Mode.CHARGER_ONLY
         else:
@@ -162,7 +183,8 @@ class Controller(Handler):
         self._mk3 = VictronMK3(port)
         self._fault: Fault | None = None
         self._idle = False
-        self._battery_monitor_info: dict[int, SettingInfo] = {}
+        self._ram_variable_info: dict[int, RamVariableInfo] = {}
+        self._setting_info: dict[int, SettingInfo] = {}
         self._last_battery_capacity: float | None = None
         self._version: VersionResponse | None = None
         self.standby: bool | None = None
@@ -222,7 +244,8 @@ class Controller(Handler):
                 else None
             )
         data.power = await self._mk3.send_power_request()
-        await self._update_battery_monitor_settings(data)
+        await self._update_settings(data)
+        await self._update_ram_variables(data)
         try:
             if data.battery_monitor_enabled:
                 data.battery_soc = await read_battery_soc(self._mk3)
@@ -234,7 +257,17 @@ class Controller(Handler):
     async def set_remote_panel_state(
         self, mode: Mode, current_limit: float | None
     ) -> None:
-        await self._mk3.send_state_request(MODE_TO_SWITCH_STATE[mode], current_limit)
+        await self._set_setting_flag(
+            FLAGS0_SETTING_ID,
+            DISABLE_CHARGE_FLAG_BIT,
+            disable_charge_for_remote_panel(mode),
+            "Charge Enabled",
+            inverted=False,
+        )
+        await self._mk3.send_state_request(
+            MODE_TO_SWITCH_STATE[base_mode_for_remote_panel(mode)],
+            current_limit,
+        )
 
     async def set_battery_monitor_enabled(self, enabled: bool) -> None:
         target_capacity = 0 if not enabled else self._last_battery_capacity
@@ -249,7 +282,7 @@ class Controller(Handler):
         )
 
     async def set_battery_monitor_setting(self, setting_id: int, value: float) -> None:
-        info = self._battery_monitor_info.get(setting_id)
+        info = await self._get_setting_info(setting_id)
         result = await write_setting(self._mk3, setting_id, value, info)
         if result is None or not result.supported:
             raise HomeAssistantError(f"Setting {setting_id} is not available")
@@ -261,14 +294,99 @@ class Controller(Handler):
         ):
             self._last_battery_capacity = result.value
 
-    async def _update_battery_monitor_settings(self, data: Data) -> None:
-        for setting_id in BATTERY_MONITOR_SETTING_IDS:
+    async def set_power_assist_enabled(self, enabled: bool) -> None:
+        await self._set_setting_flag(
+            FLAGS0_SETTING_ID,
+            POWER_ASSIST_ENABLED_FLAG_BIT,
+            enabled,
+            "PowerAssist",
+        )
+
+    async def set_ups_function_enabled(self, enabled: bool) -> None:
+        info = await self._get_setting_info(FLAGS0_SETTING_ID)
+        if not ups_function_supported(info):
+            raise HomeAssistantError("UPS Function is not available")
+
+        value = await read_setting(self._mk3, FLAGS0_SETTING_ID, info)
+        if value is None or not value.supported or value.raw_value is None:
+            raise HomeAssistantError("UPS Function is not available")
+
+        result = await write_setting_raw(
+            self._mk3,
+            FLAGS0_SETTING_ID,
+            setting_raw_with_ups_function(value.raw_value, enabled),
+            info,
+        )
+        if result is None or not result.supported:
+            raise HomeAssistantError("UPS Function is not available")
+
+    async def set_dynamic_current_limiter_enabled(self, enabled: bool) -> None:
+        await self._set_setting_flag(
+            FLAGS1_SETTING_ID,
+            DYNAMIC_CURRENT_LIMITER_ENABLED_FLAG_BIT,
+            enabled,
+            "Dynamic Current Limiter",
+        )
+
+    async def set_weak_ac_input_enabled(self, enabled: bool) -> None:
+        await self._set_setting_flag(
+            FLAGS0_SETTING_ID,
+            WEAK_AC_INPUT_ENABLED_FLAG_BIT,
+            enabled,
+            "Weak AC Input",
+        )
+
+    async def set_ignore_ac_input_enabled(self, enabled: bool) -> None:
+        raise HomeAssistantError(
+            "Ignore AC Input is reported as state only on this device"
+        )
+
+    async def _set_setting_flag(
+        self,
+        setting_id: int,
+        flag_bit: int,
+        enabled: bool,
+        name: str,
+        *,
+        inverted: bool = False,
+    ) -> None:
+        info = await self._get_setting_info(setting_id)
+        if not setting_flag_supported(info, flag_bit):
+            raise HomeAssistantError(f"{name} is not available")
+
+        value = await read_setting(self._mk3, setting_id, info)
+        if value is None or not value.supported or value.raw_value is None:
+            raise HomeAssistantError(f"{name} is not available")
+
+        result = await write_setting_raw(
+            self._mk3,
+            setting_id,
+            setting_raw_with_flag(value.raw_value, flag_bit, not enabled if inverted else enabled),
+            info,
+        )
+        if result is None or not result.supported:
+            raise HomeAssistantError(f"{name} is not available")
+
+    async def _get_ram_variable_info(self, variable_id: int) -> RamVariableInfo | None:
+        info = self._ram_variable_info.get(variable_id)
+        if info is None:
+            info = await read_ram_variable_info(self._mk3, variable_id)
+            if info is not None:
+                self._ram_variable_info[variable_id] = info
+        return info
+
+    async def _get_setting_info(self, setting_id: int) -> SettingInfo | None:
+        info = self._setting_info.get(setting_id)
+        if info is None:
+            info = await read_setting_info(self._mk3, setting_id)
+            if info is not None:
+                self._setting_info[setting_id] = info
+        return info
+
+    async def _update_settings(self, data: Data) -> None:
+        for setting_id in MONITORED_SETTING_IDS:
             try:
-                info = self._battery_monitor_info.get(setting_id)
-                if info is None:
-                    info = await read_setting_info(self._mk3, setting_id)
-                    if info is not None:
-                        self._battery_monitor_info[setting_id] = info
+                info = await self._get_setting_info(setting_id)
                 if info is None:
                     continue
                 data.setting_info[setting_id] = info
@@ -287,7 +405,7 @@ class Controller(Handler):
                     self._last_battery_capacity = value.value
             except Exception:
                 logger.debug(
-                    "Failed to read battery monitor setting %s",
+                    "Failed to read setting %s",
                     setting_id,
                     exc_info=True,
                 )
@@ -298,6 +416,25 @@ class Controller(Handler):
             if capacity is None or not capacity.supported
             else battery_monitor_enabled_from_capacity(capacity.value)
         )
+
+    async def _update_ram_variables(self, data: Data) -> None:
+        for variable_id in MONITORED_RAM_VARIABLE_IDS:
+            try:
+                info = await self._get_ram_variable_info(variable_id)
+                if info is None:
+                    continue
+                data.ram_variable_info[variable_id] = info
+
+                value = await read_ram_variable(self._mk3, variable_id, info)
+                if value is None:
+                    continue
+                data.ram_variable_values[variable_id] = value
+            except Exception:
+                logger.debug(
+                    "Failed to read RAM variable %s",
+                    variable_id,
+                    exc_info=True,
+                )
 
 
 class Context:

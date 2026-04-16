@@ -11,6 +11,9 @@ def test_sensor_source_exposes_battery_energy_entities_for_energy_dashboard() ->
 
     assert 'key="battery_energy_into"' in source
     assert 'key="battery_energy_out_of"' in source
+    assert 'key="ignore_ac_input_state"' in source
+    assert 'name="Ignore AC Input State"' in source
     assert "SensorDeviceClass.ENERGY" in source
+    assert "SensorDeviceClass.ENUM" in source
     assert "SensorStateClass.TOTAL_INCREASING" in source
     assert "UnitOfEnergy.KILO_WATT_HOUR" in source

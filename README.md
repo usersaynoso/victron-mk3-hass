@@ -8,7 +8,13 @@ devices that have VE.Bus ports using the Victron Interface MK3-USB (VE.Bus to US
 This integration lets you build a remote control panel for your charger/inverter.
 
 - Sensors describe the status of your device and its electrical performance.
-- The `Remote Panel Mode` entity sets the mode to on, off, charger_only, or inverter_only.
+- The `Remote Panel Mode` entity sets the mode to on, off, pass_through, charger_only, or inverter_only.
+- The `Charge Enabled` switch preserves the inverter setting and toggles between charging modes and non-charging modes. With the inverter side enabled, turning this switch off moves the remote panel mode to `pass_through`.
+- The `Ignore AC Input State` diagnostic sensor reports whether the VE.Bus device currently indicates AC input is being ignored.
+- The `UPS Function` switch toggles the VE.Bus input wave-check behavior when that setting is available on the device.
+- The `PowerAssist` switch toggles the device's PowerAssist configuration flag when that setting is available.
+- The `Dynamic Current Limiter` switch toggles the generator-oriented current limiter configuration flag when that setting is available.
+- The `Weak AC Input` switch toggles the relaxed AC waveform acceptance flag when that setting is available.
 - The `Remote Panel Current Limit` entity sets the AC input current limit.
 - The `Remote Panel Standby` entity sets whether the device will be prevented from
   sleeping while it is turned off. Refer to the [standby mode](#standby-mode) section for more details.
@@ -18,6 +24,7 @@ This integration lets you build a remote control panel for your charger/inverter
 Here's what each remote panel switch state means:
 
 - `on`: Enable the charger and enable the inverter.
+- `pass_through`: Disable charging while keeping the inverter side enabled so AC can pass through when available.
 - `charger_only`: Enable the charger and disable the inverter.
 - `inverter_only`: Enable the inverter and disable the charger.
 - `off`: Disable the charger and disable the inverter.
@@ -63,7 +70,15 @@ Home Assistant, VEConfigure, or VictronConnect and the connected device reports 
 variable 13 over the MK3 interface.
 
 Battery Energy Into and Battery Energy Out Of are derived from the reported DC power and
-can be used with Home Assistant's Energy battery configuration.
+can be used with Home Assistant's Energy battery configuration. Their cumulative totals
+are restored after restart, and the integration can still finish loading when the VE.Bus
+device is asleep so the entities remain available and recover on a later poll.
+
+To use the energy entities in Home Assistant, open Settings -> Dashboards -> Energy ->
+Batteries and select:
+
+- Energy charged: `Battery Energy Into`
+- Energy discharged: `Battery Energy Out Of`
 
 ### Configuration entities
 
@@ -71,7 +86,12 @@ can be used with Home Assistant's Energy battery configuration.
 - Battery Capacity
 - State of Charge When Bulk Finished
 - Charge Efficiency
-- Remote Panel Mode: off, on, charging_only, inverter_only
+- Charge Enabled: off, on
+- UPS Function: off, on
+- PowerAssist: off, on
+- Dynamic Current Limiter: off, on
+- Weak AC Input: off, on
+- Remote Panel Mode: off, on, pass_through, charger_only, inverter_only
 - Remote Panel Current Limit
 - Remote Panel Standby: off, on
 
@@ -82,14 +102,23 @@ disabling Battery Monitor sets Battery Capacity to 0.
 If your device reports Charge Efficiency as a fractional value, the Home Assistant number
 entity uses that same representation. For example, `0.95` means `95%`.
 
+`Charge Enabled` acts as a focused charger toggle. Turning it off while the inverter side
+remains enabled maps the remote panel mode to `pass_through`, which keeps inverter/AC
+pass-through behavior available without charging the batteries.
+
+`UPS Function`, `PowerAssist`, `Dynamic Current Limiter`, and `Weak AC Input` mirror
+VE.Bus configuration flags when the connected device exposes them. On unsupported
+devices, those entities remain unavailable.
+
 ### Diagnostic entities
 
 - AC Input Current Limit
 - AC Input Current Limit Maximum
 - AC Input Current Limit Minimum
 - Device State: down, startup, off, slave, invert_full, invert_half, invert_aes, power_assist, bypass, state_charge
-- Front Panel Mode: off, on, charging_only
-- Actual Mode: off, on, charging_only, inverter_only
+- Front Panel Mode: off, on, charger_only
+- Ignore AC Input State: off, on
+- Actual Mode: off, on, pass_through, charger_only, inverter_only
 - Lit Indicators: mains, absorption, bulk, float, inverter, overload, low_battery, temperature
 - Blinking Indicators: mains, absorption, bulk, float, inverter, overload, low_battery, temperature
 - Firmware Version
@@ -124,6 +153,16 @@ data:
   device_id: 54b361121006d7658fa486a9ebaf02bc
   mode: "charger_only"
   current_limit: 12.5
+```
+
+Set the remote panel mode to `pass_through` to keep the inverter side enabled while
+preventing battery charging.
+
+```yaml
+action: victron_mk3.set_remote_panel_state
+data:
+  device_id: 54b361121006d7658fa486a9ebaf02bc
+  mode: "pass_through"
 ```
 
 ## Standby mode
