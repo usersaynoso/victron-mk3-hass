@@ -17,3 +17,16 @@ def test_sensor_source_exposes_battery_energy_entities_for_energy_dashboard() ->
     assert "SensorDeviceClass.ENUM" in source
     assert "SensorStateClass.TOTAL_INCREASING" in source
     assert "UnitOfEnergy.KILO_WATT_HOUR" in source
+
+
+def test_sensor_source_exposes_signed_battery_power_entity() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "custom_components"
+        / "victron_mk3"
+        / "sensor.py"
+    ).read_text()
+
+    assert 'key="battery_charge_discharge_power"' in source
+    assert 'name="Battery Charge Discharge Power"' in source
+    assert "else -data.power.dc_power" in source

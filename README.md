@@ -62,6 +62,7 @@ you need (such as AC Input Voltage L2) because they are disabled by default.
 - Battery Input Current
 - Battery Output Current
 - Battery Power
+- Battery Charge Discharge Power
 - Battery Energy Into
 - Battery Energy Out Of
 
@@ -74,11 +75,53 @@ can be used with Home Assistant's Energy battery configuration. Their cumulative
 are restored after restart, and the integration can still finish loading when the VE.Bus
 device is asleep so the entities remain available and recover on a later poll.
 
-To use the energy entities in Home Assistant, open Settings -> Dashboards -> Energy ->
-Batteries and select:
+Battery Charge Discharge Power exposes the same DC power with the sign inverted so it can
+be used with Home Assistant's power-based battery flow view where positive values indicate
+discharge and negative values indicate charge.
+
+## Home Assistant Energy Setup
+
+Open Settings -> Dashboards -> Energy to configure the energy dashboard.
+
+### Grid settings
+
+This integration exposes `AC Input Power` as an instantaneous grid-side power sensor.
+
+- Type of power measurement: `AC Input Power`
+- Direction: `Standard`
+
+`AC Input Power` already follows Home Assistant's grid-power convention:
+
+- positive values mean importing from the grid
+- negative values mean exporting to the grid
+
+Only use `AC Input Power` for the grid power setting if the VE.Bus device is measuring the
+same grid connection point that you want Home Assistant to display. If part of the site load
+or generation bypasses the VE.Bus device, use a separate site meter for the grid settings.
+
+This integration does not currently expose cumulative grid import/export energy sensors, so
+the Energy dashboard's grid energy settings still need to come from an external meter or
+another integration when you want full grid energy accounting.
+
+### Home Battery Storage settings
+
+To configure Home Battery Storage in Home Assistant, use:
 
 - Energy charged: `Battery Energy Into`
 - Energy discharged: `Battery Energy Out Of`
+- Type of power measurement: `Battery Charge Discharge Power`
+- Direction: `Standard`
+
+`Battery Charge Discharge Power` follows Home Assistant's battery-power convention:
+
+- positive values mean the battery is discharging
+- negative values mean the battery is charging
+
+If you prefer to use `Battery Power` instead, select `Inverted` because `Battery Power`
+reports the opposite sign convention:
+
+- positive values mean charging
+- negative values mean discharging
 
 ### Configuration entities
 
