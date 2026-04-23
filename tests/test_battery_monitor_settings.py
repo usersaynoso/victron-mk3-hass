@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import math
 from pathlib import Path
 import sys
 
@@ -242,6 +243,59 @@ def test_setting_flag_helpers_use_raw_bit_masks() -> None:
     assert battery_monitor_settings.DISABLE_CHARGE_FLAG_BIT == 6
     assert battery_monitor_settings.WEAK_AC_INPUT_ENABLED_FLAG_BIT == 14
     assert battery_monitor_settings.DYNAMIC_CURRENT_LIMITER_ENABLED_FLAG_BIT == 12
+
+
+def test_numeric_setting_range_helpers_cover_absolute_and_relative_values() -> None:
+    info = battery_monitor_settings.SettingInfo(
+        setting_id=battery_monitor_settings.DC_INPUT_LOW_SHUTDOWN_SETTING_ID,
+        supported=True,
+        scale=0.01,
+        offset=0,
+        minimum_raw=930,
+        maximum_raw=1300,
+    )
+    value = battery_monitor_settings.SettingValue(
+        setting_id=battery_monitor_settings.DC_INPUT_LOW_SHUTDOWN_SETTING_ID,
+        supported=True,
+        raw_value=1150,
+        value=11.5,
+    )
+    relative_info = battery_monitor_settings.SettingInfo(
+        setting_id=battery_monitor_settings.DC_INPUT_LOW_RESTART_OFFSET_SETTING_ID,
+        supported=True,
+        scale=0.01,
+        offset=0,
+        minimum_raw=25,
+        maximum_raw=600,
+    )
+    relative_value = battery_monitor_settings.SettingValue(
+        setting_id=battery_monitor_settings.DC_INPUT_LOW_RESTART_OFFSET_SETTING_ID,
+        supported=True,
+        raw_value=160,
+        value=1.6,
+    )
+
+    assert battery_monitor_settings.numeric_setting_range(info, value) == (
+        9.3,
+        13.0,
+        0.01,
+        11.5,
+    )
+    assert battery_monitor_settings.relative_setting_absolute_value(11.5, relative_value) == 13.1
+    assert battery_monitor_settings.relative_numeric_setting_range(
+        11.5,
+        relative_info,
+        relative_value,
+    ) == (
+        11.75,
+        17.5,
+        0.01,
+        13.1,
+    )
+    assert math.isclose(
+        battery_monitor_settings.relative_setting_offset_from_absolute(11.5, 13.1),
+        1.6,
+    )
 
 
 def test_public_setting_api_is_coerced() -> None:

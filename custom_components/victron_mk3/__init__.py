@@ -281,7 +281,7 @@ class Controller(Handler):
             float(target_capacity),
         )
 
-    async def set_battery_monitor_setting(self, setting_id: int, value: float) -> None:
+    async def set_setting(self, setting_id: int, value: float) -> None:
         info = await self._get_setting_info(setting_id)
         result = await write_setting(self._mk3, setting_id, value, info)
         if result is None or not result.supported:
@@ -293,6 +293,9 @@ class Controller(Handler):
             and result.value > 0
         ):
             self._last_battery_capacity = result.value
+
+    async def set_battery_monitor_setting(self, setting_id: int, value: float) -> None:
+        await self.set_setting(setting_id, value)
 
     async def set_power_assist_enabled(self, enabled: bool) -> None:
         await self._set_setting_flag(

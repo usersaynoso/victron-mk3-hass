@@ -12,4 +12,8 @@ def test_battery_monitor_number_entities_avoid_unsupported_precision_keyword() -
     assert "battery_capacity" in source
     assert "battery_soc_when_bulk_finished" in source
     assert "battery_charge_efficiency" in source
+    assert "dc_input_low_shutdown" in source
+    assert "DC Input Low Shut-down" in source
+    assert "dc_input_low_restart" in source
+    assert "DC Input Low Restart" in source
     assert "suggested_display_precision" not in source

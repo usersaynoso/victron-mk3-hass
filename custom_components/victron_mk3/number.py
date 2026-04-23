@@ -8,7 +8,12 @@ from homeassistant.components.number import (
     NumberMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfElectricCurrent
+from homeassistant.const import (
+    EntityCategory,
+    PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -20,6 +25,11 @@ from .battery_monitor_settings import (
     BATTERY_CAPACITY_SETTING_ID,
     BATTERY_CHARGE_EFFICIENCY_SETTING_ID,
     BATTERY_SOC_WHEN_BULK_FINISHED_SETTING_ID,
+    DC_INPUT_LOW_RESTART_OFFSET_SETTING_ID,
+    DC_INPUT_LOW_SHUTDOWN_SETTING_ID,
+    numeric_setting_range,
+    relative_numeric_setting_range,
+    relative_setting_offset_from_absolute,
 )
 from .const import (
     DOMAIN,
@@ -42,7 +52,24 @@ async def set_remote_panel_current_limit(context: Context, value: float) -> None
 async def set_battery_monitor_setting(
     context: Context, setting_id: int, value: float
 ) -> None:
-    await context.controller.set_battery_monitor_setting(setting_id, value)
+    await context.controller.set_setting(setting_id, value)
+    await context.coordinator.async_request_refresh()
+
+
+async def set_dc_input_low_restart(context: Context, absolute_value: float) -> None:
+    data = context.coordinator.data
+    shutdown_value = (
+        None
+        if data is None
+        else relative_setting_base_value(data, DC_INPUT_LOW_SHUTDOWN_SETTING_ID)
+    )
+    if shutdown_value is None:
+        raise HomeAssistantError("Device is not available")
+
+    await context.controller.set_setting(
+        DC_INPUT_LOW_RESTART_OFFSET_SETTING_ID,
+        relative_setting_offset_from_absolute(shutdown_value, absolute_value),
+    )
     await context.coordinator.async_request_refresh()
 
 
@@ -76,9 +103,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3NumberEntityDescription, ...] = (
         native_unit_of_measurement="Ah",
         entity_category=EntityCategory.CONFIG,
         mode=NumberMode.BOX,
-        range_fn=lambda data: battery_monitor_setting_range(
-            data, BATTERY_CAPACITY_SETTING_ID
-        ),
+        range_fn=lambda data: setting_range(data, BATTERY_CAPACITY_SETTING_ID),
         set_fn=lambda context, value: set_battery_monitor_setting(
             context, BATTERY_CAPACITY_SETTING_ID, value
         ),
@@ -89,7 +114,7 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3NumberEntityDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         entity_category=EntityCategory.CONFIG,
         mode=NumberMode.BOX,
-        range_fn=lambda data: battery_monitor_setting_range(
+        range_fn=lambda data: setting_range(
             data, BATTERY_SOC_WHEN_BULK_FINISHED_SETTING_ID
         ),
         set_fn=lambda context, value: set_battery_monitor_setting(
@@ -101,38 +126,59 @@ ENTITY_DESCRIPTIONS: tuple[VictronMK3NumberEntityDescription, ...] = (
         name="Charge Efficiency",
         entity_category=EntityCategory.CONFIG,
         mode=NumberMode.BOX,
-        range_fn=lambda data: battery_monitor_setting_range(
+        range_fn=lambda data: setting_range(
             data, BATTERY_CHARGE_EFFICIENCY_SETTING_ID
         ),
         set_fn=lambda context, value: set_battery_monitor_setting(
             context, BATTERY_CHARGE_EFFICIENCY_SETTING_ID, value
         ),
     ),
+    VictronMK3NumberEntityDescription(
+        key="dc_input_low_shutdown",
+        name="DC Input Low Shut-down",
+        device_class=NumberDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        entity_category=EntityCategory.CONFIG,
+        mode=NumberMode.BOX,
+        range_fn=lambda data: setting_range(data, DC_INPUT_LOW_SHUTDOWN_SETTING_ID),
+        set_fn=lambda context, value: set_battery_monitor_setting(
+            context, DC_INPUT_LOW_SHUTDOWN_SETTING_ID, value
+        ),
+    ),
+    VictronMK3NumberEntityDescription(
+        key="dc_input_low_restart",
+        name="DC Input Low Restart",
+        device_class=NumberDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        entity_category=EntityCategory.CONFIG,
+        mode=NumberMode.BOX,
+        range_fn=lambda data: dc_input_low_restart_range(data),
+        set_fn=set_dc_input_low_restart,
+    ),
 )
 
 
-def battery_monitor_setting_range(
+def setting_range(
     data: Data, setting_id: int
 ) -> tuple[float, float, float, float] | None:
-    info = data.setting_info.get(setting_id)
-    value = data.setting_values.get(setting_id)
-    if (
-        info is None
-        or not info.supported
-        or info.minimum is None
-        or info.maximum is None
-        or info.scale is None
-        or value is None
-        or not value.supported
-        or value.value is None
-    ):
-        return None
+    return numeric_setting_range(
+        data.setting_info.get(setting_id),
+        data.setting_values.get(setting_id),
+    )
 
-    return (
-        info.minimum,
-        info.maximum,
-        abs(info.scale),
-        value.value,
+
+def relative_setting_base_value(data: Data, setting_id: int) -> float | None:
+    value = data.setting_values.get(setting_id)
+    if value is None or not value.supported:
+        return None
+    return value.value
+
+
+def dc_input_low_restart_range(data: Data) -> tuple[float, float, float, float] | None:
+    return relative_numeric_setting_range(
+        relative_setting_base_value(data, DC_INPUT_LOW_SHUTDOWN_SETTING_ID),
+        data.setting_info.get(DC_INPUT_LOW_RESTART_OFFSET_SETTING_ID),
+        data.setting_values.get(DC_INPUT_LOW_RESTART_OFFSET_SETTING_ID),
     )
 
 

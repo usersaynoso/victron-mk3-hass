@@ -18,6 +18,9 @@ DYNAMIC_CURRENT_LIMITER_ENABLED_FLAG_BIT = 12
 BATTERY_CAPACITY_SETTING_ID = 64
 BATTERY_SOC_WHEN_BULK_FINISHED_SETTING_ID = 65
 BATTERY_CHARGE_EFFICIENCY_SETTING_ID = 72
+DC_INPUT_LOW_SHUTDOWN_SETTING_ID = 11
+# VE.Bus stores low restart as an offset above the low shut-down voltage.
+DC_INPUT_LOW_RESTART_OFFSET_SETTING_ID = 12
 
 BATTERY_MONITOR_SETTING_IDS = (
     BATTERY_CAPACITY_SETTING_ID,
@@ -25,6 +28,8 @@ BATTERY_MONITOR_SETTING_IDS = (
     BATTERY_CHARGE_EFFICIENCY_SETTING_ID,
 )
 MONITORED_SETTING_IDS = BATTERY_MONITOR_SETTING_IDS + (
+    DC_INPUT_LOW_SHUTDOWN_SETTING_ID,
+    DC_INPUT_LOW_RESTART_OFFSET_SETTING_ID,
     FLAGS0_SETTING_ID,
     FLAGS1_SETTING_ID,
 )
@@ -168,6 +173,74 @@ def setting_raw_with_ups_function(raw_value: int, enabled: bool) -> int:
     return setting_raw_with_flag(
         value, DISABLE_WAVE_CHECK_INVERTED_FLAG_BIT, enabled
     )
+
+
+def numeric_setting_range(
+    info: SettingInfo | None, value: SettingValue | None
+) -> tuple[float, float, float, float] | None:
+    if (
+        info is None
+        or not info.supported
+        or info.minimum is None
+        or info.maximum is None
+        or info.scale is None
+        or value is None
+        or not value.supported
+        or value.value is None
+    ):
+        return None
+
+    return (
+        info.minimum,
+        info.maximum,
+        abs(info.scale),
+        value.value,
+    )
+
+
+def relative_numeric_setting_range(
+    base_value: float | None,
+    info: SettingInfo | None,
+    value: SettingValue | None,
+) -> tuple[float, float, float, float] | None:
+    absolute_value = relative_setting_absolute_value(base_value, value)
+    if (
+        base_value is None
+        or absolute_value is None
+        or info is None
+        or not info.supported
+        or info.minimum is None
+        or info.maximum is None
+        or info.scale is None
+    ):
+        return None
+
+    return (
+        base_value + info.minimum,
+        base_value + info.maximum,
+        abs(info.scale),
+        absolute_value,
+    )
+
+
+def relative_setting_absolute_value(
+    base_value: float | None, value: SettingValue | None
+) -> float | None:
+    if (
+        base_value is None
+        or value is None
+        or not value.supported
+        or value.value is None
+    ):
+        return None
+
+    return base_value + value.value
+
+
+def relative_setting_offset_from_absolute(
+    base_value: float, absolute_value: float
+) -> float:
+    return absolute_value - base_value
 
 
 async def read_setting_info(mk3: Any, setting_id: int) -> SettingInfo | None:
