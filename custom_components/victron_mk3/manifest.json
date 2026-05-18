@@ -1,13 +1,13 @@
 {
   "domain": "victron_mk3",
-  "name": "Victron MK3",
+  "name": "Victron MK3 (Deprecated)",
   "codeowners": ["@j9brown"],
   "config_flow": true,
   "dependencies": ["usb"],
-  "documentation": "https://github.com/j9brown/victron-mk3-hass/",
+  "documentation": "https://github.com/usersaynoso/victron-vebus-mk3-control/",
   "integration_type": "device",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/j9brown/victron-mk3-hass/issues",
+  "issue_tracker": "https://github.com/usersaynoso/victron-vebus-mk3-control/issues",
   "loggers": ["victron_mk3"],
   "requirements": [
     "victron_mk3 @ git+https://github.com/j9brown/victron-mk3.git@v0.6.0",
@@ -22,5 +22,5 @@
       "description": "*mk3*"
     }
   ],
-  "version": "0.6.0"
+  "version": "0.6.1"
 }
